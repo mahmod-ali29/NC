@@ -51,7 +51,8 @@
             "name": "[variables('loadBalancingSettingsName')]",
             "properties": {
               "sampleSize": 4,
-              "successfulSamplesRequired": 2
+              "successfulSamplesRequired": 2,
+              "additionalLatencyMilliseconds": 100
             }
           }
         ],
@@ -85,7 +86,7 @@
                   "httpPort": 80,
                   "httpsPort": 443,
                   "weight": 50,
-                  "priority": 1,
+                  "priority": 2,
                   "enabledState": "Enabled"
                 }                
               ],

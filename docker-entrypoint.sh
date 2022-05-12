@@ -1,6 +1,6 @@
 #!/bin/bash
 /usr/sbin/sshd
-service ssh start
+#service ssh start
 
 set -e
 

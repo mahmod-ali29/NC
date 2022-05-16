@@ -3,7 +3,7 @@ read -p "Insert the External Subnet to access the Linux Container (e.g.89.1.208.
 RG="1-c38f8b22-playground-sandbox"
 region1="eastus"
 region2="centralus"
-storageAccountName="storageaccounttest1112as"
+storageAccountName="storageaccounttest1s112as"
 webapp1="appghostblog-2342-${region1}"
 webapp2="appghostblog-2442-${region2}"
 

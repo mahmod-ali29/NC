@@ -3,7 +3,7 @@ read -p "Insert the External Subnet to access the Linux Container (e.g.89.1.208.
 RG="1-c38f8b22-playground-sandbox"
 region1="eastus"
 region2="centralus"
-storageAccountName="storageaccounttest1s112as"
+storageAccountName="storageaccounttestnc11as"
 webapp1="appghostblog-2342-${region1}"
 webapp2="appghostblog-2442-${region2}"
 
@@ -33,6 +33,9 @@ az acr build \
 	--image ghost/ghost-alpine:v1 \
 	--registry acrbuildcontainer11 \
 	--file Dockerfile . 
+
+acrloginserver=$(az acr credential show -n acrbuildcontainer11 --query username --output tsv)
+acrloginpassword=$(az acr credential show -n acrbuildcontainer11 --query passwords[0].value --output tsv)
 
 #Create App Service Plan for region1 & region2
 az appservice plan create \
@@ -120,14 +123,35 @@ az webapp create \
 	--plan "AppServicePlan-${region1}" \
 	--name $webapp1 \
 	--deployment-container-image-name acrbuildcontainer11.azurecr.io/ghost/ghost-alpine:v1 \
-    --https-only true
+    --https-only true \
+	--docker-registry-server-user $acrloginserver \
+	--docker-registry-server-password $acrloginpassword
 
 az webapp create \
 	--resource-group $RG \
 	--plan "AppServicePlan-${region2}" \
 	--name $webapp2 \
 	--deployment-container-image-name acrbuildcontainer11.azurecr.io/ghost/ghost-alpine:v1 \
-    --https-only true
+    --https-only true \
+	--docker-registry-server-user $acrloginserver \
+	--docker-registry-server-password $acrloginpassword
+
+#Create stagging deployment Slot for App1 in region1 & region2
+az webapp deployment slot create \
+	--name $webapp1 \
+	--resource-group $RG \
+	--slot testing \
+	--deployment-container-image-name acrbuildcontainer11.azurecr.io/ghost/ghost-alpine:v1 \
+	--docker-registry-server-user $acrloginserver \
+	--docker-registry-server-password $acrloginpassword
+
+az webapp deployment slot create \
+	--name $webapp2 \
+	--resource-group $RG \
+	--slot testing \
+	--deployment-container-image-name acrbuildcontainer11.azurecr.io/ghost/ghost-alpine:v1 \
+	--docker-registry-server-user $acrloginserver \
+	--docker-registry-server-password $acrloginpassword 
 
 #Enable Application and Container Logging for region1 & region2
 az webapp log config \
@@ -143,6 +167,23 @@ az webapp log config \
 	--application-logging filesystem \
 	--docker-container-logging filesystem \
 	--web-server-logging filesystem
+
+#Enable Application and Container Logging for App Slots in region1 & region2
+az webapp log config \
+	--resource-group $RG \
+	--name $webapp1 \
+	--application-logging filesystem \
+	--docker-container-logging filesystem \
+	--web-server-logging filesystem \
+    --slot testing 
+
+az webapp log config \
+	--resource-group $RG \
+	--name $webapp2 \
+	--application-logging filesystem \
+	--docker-container-logging filesystem \
+	--web-server-logging filesystem \
+     --slot testing
 
 #configure App Healthcheck for region1 & region2
 az webapp config set \
@@ -167,17 +208,33 @@ az webapp config appsettings set \
 	--name $webapp2 \
 	--settings WEBSITE_HEALTHCHECK_MAXPINGFAILURES=2
 
-#Create stagging deployment Slot for App1 in region1 & region2
-az webapp deployment slot create \
+#configure App Healthcheck for App Slots in region1 & region2
+az webapp config set \
+	--resource-group $RG \
 	--name $webapp1 \
-	--resource-group $RG \
-	--slot testing
+	--generic-configurations '{"healthCheckPath":"/"}' \
+	--ftps-state FtpsOnly \
+    --slot testing
 
-az webapp deployment slot create \
+az webapp config appsettings set \
+	--resource-group $RG \
+	--name $webapp1 \
+	--settings WEBSITE_HEALTHCHECK_MAXPINGFAILURES=2 \
+    --slot testing
+
+az webapp config set \
+	--resource-group $RG \
 	--name $webapp2 \
-	--resource-group $RG \
-	--slot testing
+	--generic-configurations '{"healthCheckPath":"/"}' \
+	--ftps-state FtpsOnly \
+    --slot testing
 
+az webapp config appsettings set \
+	--resource-group $RG \
+	--name $webapp2 \
+	--settings WEBSITE_HEALTHCHECK_MAXPINGFAILURES=2 \
+    --slot testing
+	
 #####Create Frontdoor using ARM template#######
 az deployment group create \
 	--resource-group $RG \
@@ -212,18 +269,36 @@ az webapp config access-restriction add \
 	--resource-group $RG \
 	--name $webapp1 \
     --rule-name allow-frontdoor \
-    --action Allow \
-    --service-tag AzureFrontDoor.Backend \
-    --priority 10
+   	 --action Allow \
+   	 --service-tag AzureFrontDoor.Backend \
+	 --priority 10
 
 az webapp config access-restriction add \
 	--resource-group $RG \
 	--name $webapp2 \
     --rule-name allow-frontdoor \
-    --action Allow \
-    --service-tag AzureFrontDoor.Backend \
+   	--action Allow \
+   	--service-tag AzureFrontDoor.Backend \
     --priority 10
+	
+az webapp config access-restriction add \
+	--resource-group $RG \
+	--name $webapp1 \
+    --rule-name allow-frontdoor \
+   	 --action Allow \
+   	 --service-tag AzureFrontDoor.Backend \
+	 --priority 10 \
+	 --slot testing
 
+az webapp config access-restriction add \
+	--resource-group $RG \
+	--name $webapp2 \
+    --rule-name allow-frontdoor \
+   	--action Allow \
+   	--service-tag AzureFrontDoor.Backend \
+    --priority 10 \
+	--slot testing
+	
 #Blocking direct access to the App via ssh, allow only from the your External IP Address
  az webapp config access-restriction add \
 	--resource-group $RG \
@@ -242,7 +317,27 @@ az webapp config access-restriction add \
     --scm-site true \
     --ip-address $ExternalIP \
     --priority 10
+    
+ az webapp config access-restriction add \
+	--resource-group $RG \
+	--name $webapp1 \
+    --rule-name allow-frontdoor \
+    --action Allow \
+    --scm-site true \
+    --ip-address $ExternalIP \
+    --priority 10 \
+	--slot testing
 
+az webapp config access-restriction add \
+	--resource-group $RG \
+	--name $webapp2 \
+    --rule-name allow-frontdoor \
+    --action Allow \
+    --scm-site true \
+    --ip-address $ExternalIP \
+    --priority 10 \
+	--slot testing
+	
 #Create Log Analytics 
 az monitor log-analytics workspace create \
     -g $RG \
@@ -273,6 +368,23 @@ az monitor app-insights component connect-webapp \
 --web-app $webapp2 \
 --enable-debugger false \
 --enable-profiler false
+
+#connect app insights to App slots
+az monitor app-insights component connect-webapp \
+--resource-group $RG \
+--app AppInsight \
+--web-app $webapp1 \
+--enable-debugger false \
+--enable-profiler false \
+--slot testing
+
+az monitor app-insights component connect-webapp \
+--resource-group $RG \
+--app AppInsight \
+--web-app $webapp2 \
+--enable-debugger false \
+--enable-profiler false \
+--slot testing
 
 IDApp1=$(az webapp show --resource-group $RG --name $webapp1 --query [id] --output tsv)
 IDApp2=$(az webapp show --resource-group $RG --name $webapp2 --query [id] --output tsv)

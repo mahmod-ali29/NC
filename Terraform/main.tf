@@ -479,6 +479,6 @@ resource "azurerm_monitor_diagnostic_setting" "Webapp2Diagnostic" {
     }
   }
 }
-output "BlogURL:" {
+output "BlogURL" {
   value = azurerm_frontdoor.afd.cname
 }

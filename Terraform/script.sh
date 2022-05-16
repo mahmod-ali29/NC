@@ -1,11 +1,6 @@
 read -p "Insert the Resource Group Name:" RG
 read -p "Insert the External IP address to access the container (e.g x.x.x.x/x):" ExternalIP
 
-#clone the script
-git clone https://github.com/mahmod-ali29/NC.git
-cd NC
-git remote remove origin
-
 ##Create ACR
 az acr create \
 	--resource-group $RG \

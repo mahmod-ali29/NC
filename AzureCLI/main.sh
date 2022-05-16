@@ -1,15 +1,11 @@
 #!/bin/bash
 read -p "Insert the External Subnet to access the Linux Container (e.g.89.1.208.203):" ExternalIP
-RG="RG-Ghostblog"
+RG="1-c38f8b22-playground-sandbox"
 region1="eastus"
 region2="centralus"
 storageAccountName="storageaccounttest1112as"
 webapp1="appghostblog-2342-${region1}"
 webapp2="appghostblog-2442-${region2}"
-
-git clone https://github.com/mahmod-ali29/NC.git
-cd NC
-git remote remove origin
 
 #create storage account
 az storage account create \

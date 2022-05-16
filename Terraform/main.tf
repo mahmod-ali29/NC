@@ -21,6 +21,7 @@ resource "azurerm_storage_account" "STA" {
 }
 resource "azurerm_storage_share" "fileshare" {
   name                 = "ghost-fileshare"
+  access_tier          = "TransactionOptimized"
   storage_account_name = azurerm_storage_account.STA.name
   quota                = 50
 }

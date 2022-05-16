@@ -116,7 +116,7 @@
               ],
               "routeConfiguration": {
                 "@odata.type": "#Microsoft.Azure.FrontDoor.Models.FrontdoorForwardingConfiguration",
-                "forwardingProtocol": "MatchRequest",
+                "forwardingProtocol": "HttpsOnly",
                 "backendPool": {
                   "id": "[resourceId('Microsoft.Network/frontDoors/backEndPools', parameters('frontDoorName'), variables('backendPoolName'))]"
                 }

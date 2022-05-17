@@ -7,10 +7,11 @@ variable storageAccountName {}
 variable region1 {}
 variable region2 {}
 variable ExternalIP {}
-variable RG {
-    description = "Insert the Resource Group Name"
-}
-
+variable DBName {}
+variable DBNameTest {}
+variable MYSQLUSER {}
+variable MYSQLPASSWORD {}
+variable RG {}
 ##############Storage Account################
 resource "azurerm_storage_account" "STA" {
   name                     = var.storageAccountName
@@ -21,11 +22,15 @@ resource "azurerm_storage_account" "STA" {
 }
 resource "azurerm_storage_share" "fileshare" {
   name                 = "ghost-fileshare"
-  access_tier          = "TransactionOptimized"
   storage_account_name = azurerm_storage_account.STA.name
   quota                = 50
 }
 
+resource "azurerm_storage_share" "fileshare2" {
+  name                 = "ghost-fileshare-test"
+  storage_account_name = azurerm_storage_account.STA.name
+  quota                = 50
+}
 ############## App Service Plan ######################
 resource "azurerm_service_plan" "AppServicePlan1" {
   name                = "AppServicePlan-${var.region1}"
@@ -45,7 +50,6 @@ resource "azurerm_service_plan" "AppServicePlan2" {
 }
 
 ############## Get the ACR credentials ######################
-
 data "azurerm_container_registry" "ACRcred" {
   name                = "acrbuildcontainer11"
   resource_group_name = var.RG
@@ -58,11 +62,17 @@ resource "azurerm_linux_web_app" "App1" {
   resource_group_name = var.RG
   service_plan_id = azurerm_service_plan.AppServicePlan1.id
   https_only = "true"
+  depends_on = [azurerm_mysql_flexible_server.MysqlServer]
   app_settings = {
     "APPINSIGHTS_INSTRUMENTATIONKEY" = azurerm_application_insights.AppInsight.instrumentation_key
     "DOCKER_REGISTRY_SERVER_URL" = "https://${data.azurerm_container_registry.ACRcred.login_server}"
     "DOCKER_REGISTRY_SERVER_USERNAME" = data.azurerm_container_registry.ACRcred.admin_username
     "DOCKER_REGISTRY_SERVER_PASSWORD" = data.azurerm_container_registry.ACRcred.admin_password
+     database__client = "mysql"
+     database__connection__database = var.DBName 
+     database__connection__host = azurerm_mysql_flexible_server.MysqlServer.fqdn
+     database__connection__user = var.MYSQLUSER 
+     database__connection__password = var.MYSQLPASSWORD
   }
   site_config {
       always_on = "true"
@@ -77,7 +87,7 @@ resource "azurerm_linux_web_app" "App1" {
         name = "allow-ExternalIP"
         priority ="10"
         action = "Allow"
-        ip_address = var.ExternalIP
+        ip_address = "${var.ExternalIP}/32"
       }
       ip_restriction  {
         name = "allow-FrontdoorOnly"
@@ -86,6 +96,14 @@ resource "azurerm_linux_web_app" "App1" {
         service_tag = "AzureFrontDoor.Backend"
       }
       } 
+  storage_account {
+    access_key = azurerm_storage_account.STA.primary_access_key
+    account_name = var.storageAccountName
+    name = "volume"
+    share_name = "ghost-fileshare"
+    type = "AzureFiles"
+    mount_path = "/var/lib/ghost/content"
+  }
   logs  {
       application_logs {
       	file_system_level = "Error"
@@ -105,11 +123,17 @@ resource "azurerm_linux_web_app" "App2" {
   resource_group_name = var.RG
   service_plan_id = azurerm_service_plan.AppServicePlan2.id
   https_only = "true"
+  depends_on = [azurerm_mysql_flexible_server.MysqlServer]
   app_settings = {
     "APPINSIGHTS_INSTRUMENTATIONKEY" = azurerm_application_insights.AppInsight.instrumentation_key
     "DOCKER_REGISTRY_SERVER_URL" = "https://${data.azurerm_container_registry.ACRcred.login_server}"
     "DOCKER_REGISTRY_SERVER_USERNAME" = data.azurerm_container_registry.ACRcred.admin_username
     "DOCKER_REGISTRY_SERVER_PASSWORD" = data.azurerm_container_registry.ACRcred.admin_password
+     database__client = "mysql"
+     database__connection__database = var.DBName 
+     database__connection__host = azurerm_mysql_flexible_server.MysqlServer.fqdn
+     database__connection__user = var.MYSQLUSER 
+     database__connection__password = var.MYSQLPASSWORD
   }
   site_config {
       always_on = "true"
@@ -124,7 +148,7 @@ resource "azurerm_linux_web_app" "App2" {
         name = "allow-ExternalIP"
         priority ="10"
         action = "Allow"
-        ip_address = var.ExternalIP
+        ip_address = "${var.ExternalIP}/32"
       }
       ip_restriction  {
         name = "allow-FrontdoorOnly"
@@ -132,7 +156,15 @@ resource "azurerm_linux_web_app" "App2" {
         action = "Allow"
         service_tag = "AzureFrontDoor.Backend"
       }
-      } 
+    }
+  storage_account {
+    access_key = azurerm_storage_account.STA.primary_access_key
+    account_name = var.storageAccountName
+    name = "volume"
+    share_name = "ghost-fileshare"
+    type = "AzureFiles"
+    mount_path = "/var/lib/ghost/content"
+  }     
   logs  {
       application_logs {
       	file_system_level = "Error"
@@ -149,11 +181,17 @@ resource "azurerm_linux_web_app_slot" "App1StagingSlot" {
   name           = "appghostblog-${var.region1}-testing"
   app_service_id = azurerm_linux_web_app.App1.id
   https_only = "true"
+  depends_on = [azurerm_linux_web_app.App1]
   app_settings = {
     "APPINSIGHTS_INSTRUMENTATIONKEY" = azurerm_application_insights.AppInsight.instrumentation_key
     "DOCKER_REGISTRY_SERVER_URL" = "https://${data.azurerm_container_registry.ACRcred.login_server}"
     "DOCKER_REGISTRY_SERVER_USERNAME" = data.azurerm_container_registry.ACRcred.admin_username
     "DOCKER_REGISTRY_SERVER_PASSWORD" = data.azurerm_container_registry.ACRcred.admin_password
+     database__client = "mysql"
+     database__connection__database = var.DBNameTest
+     database__connection__host = azurerm_mysql_flexible_server.MysqlServer.fqdn
+     database__connection__user = var.MYSQLUSER 
+     database__connection__password = var.MYSQLPASSWORD    
   }  
   site_config {
       always_on = "true"
@@ -168,7 +206,7 @@ resource "azurerm_linux_web_app_slot" "App1StagingSlot" {
         name = "allow-ExternalIP"
         priority ="10"
         action = "Allow"
-        ip_address = var.ExternalIP
+        ip_address = "${var.ExternalIP}/32"
       }
       ip_restriction  {
         name = "allow-FrontdoorOnly"
@@ -176,7 +214,15 @@ resource "azurerm_linux_web_app_slot" "App1StagingSlot" {
         action = "Allow"
         service_tag = "AzureFrontDoor.Backend"
       }
-    } 
+    }
+  storage_account {
+    access_key = azurerm_storage_account.STA.primary_access_key
+    account_name = var.storageAccountName
+    name = "volume"
+    share_name = "ghost-fileshare-test"
+    type = "AzureFiles"
+    mount_path = "/var/lib/ghost/content"
+  }     
   logs  {
       application_logs {
       	file_system_level = "Error"
@@ -194,11 +240,17 @@ resource "azurerm_linux_web_app_slot" "App2StagingSlot" {
   name           = "appghostblog-${var.region2}-testing"
   app_service_id = azurerm_linux_web_app.App2.id
   https_only = "true"
+  depends_on = [azurerm_linux_web_app.App2]
   app_settings = {
     "APPINSIGHTS_INSTRUMENTATIONKEY" = azurerm_application_insights.AppInsight.instrumentation_key
     "DOCKER_REGISTRY_SERVER_URL" = "https://${data.azurerm_container_registry.ACRcred.login_server}"
     "DOCKER_REGISTRY_SERVER_USERNAME" = data.azurerm_container_registry.ACRcred.admin_username
     "DOCKER_REGISTRY_SERVER_PASSWORD" = data.azurerm_container_registry.ACRcred.admin_password
+     database__client = "mysql"
+     database__connection__database = var.DBNameTest
+     database__connection__host = azurerm_mysql_flexible_server.MysqlServer.fqdn
+     database__connection__user = var.MYSQLUSER 
+     database__connection__password = var.MYSQLPASSWORD    
   }  
   site_config {
       always_on = "true"
@@ -213,7 +265,7 @@ resource "azurerm_linux_web_app_slot" "App2StagingSlot" {
         name = "allow-ExternalIP"
         priority ="10"
         action = "Allow"
-        ip_address = var.ExternalIP
+        ip_address = "${var.ExternalIP}/32"
       }
       ip_restriction  {
         name = "allow-FrontdoorOnly"
@@ -221,7 +273,15 @@ resource "azurerm_linux_web_app_slot" "App2StagingSlot" {
         action = "Allow"
         service_tag = "AzureFrontDoor.Backend"
       }
-    } 
+    }
+  storage_account {
+    access_key = azurerm_storage_account.STA.primary_access_key
+    account_name = var.storageAccountName
+    name = "volume"
+    share_name = "ghost-fileshare-test"
+    type = "AzureFiles"
+    mount_path = "/var/lib/ghost/content"
+  }     
   logs  {
       application_logs {
       	file_system_level = "Error"
@@ -444,6 +504,7 @@ resource "azurerm_application_insights" "AppInsight" {
 resource "azurerm_monitor_diagnostic_setting" "Webapp1Diagnostic" {
   name               = "diag-ghostapp-${var.region1}"
   target_resource_id = azurerm_linux_web_app.App1.id
+  depends_on = [azurerm_linux_web_app.App1]
   log_analytics_workspace_id  = azurerm_log_analytics_workspace.LogAnalytics.id
 
   log {
@@ -465,7 +526,7 @@ resource "azurerm_monitor_diagnostic_setting" "Webapp2Diagnostic" {
   name               = "diag-ghostapp-${var.region2}"
   target_resource_id = azurerm_linux_web_app.App2.id
   log_analytics_workspace_id  = azurerm_log_analytics_workspace.LogAnalytics.id
-
+  depends_on = [azurerm_linux_web_app.App2]
   log {
     category = "AppServiceAppLogs"
     retention_policy {
@@ -480,6 +541,55 @@ resource "azurerm_monitor_diagnostic_setting" "Webapp2Diagnostic" {
     }
   }
 }
+
+resource "azurerm_mysql_flexible_server" "MysqlServer" {
+  name                   = "mysqlghostblogflexibles1784"
+  resource_group_name    = var.RG
+  location               = var.region1
+  administrator_login    = "ghostuser"
+  administrator_password = "Test12345!"
+  sku_name               = "B_Standard_B1s"
+  zone = "1"
+  version = "5.7"
+  storage {
+    auto_grow_enabled = true
+    size_gb = 20
+  }
+}
+
+resource "azurerm_mysql_flexible_server_configuration" "MySQLServerTransport" {
+  name                = "require_secure_transport"
+  resource_group_name = var.RG
+  server_name         = azurerm_mysql_flexible_server.MysqlServer.name
+  value               = "OFF"
+}
+
+resource "azurerm_mysql_flexible_server_firewall_rule" "MysqlFW" {
+  name                = "AllowAzureServices"
+  depends_on = [azurerm_mysql_flexible_server.MysqlServer]
+  resource_group_name = var.RG
+  server_name         = azurerm_mysql_flexible_server.MysqlServer.name
+  start_ip_address    = "0.0.0.0"
+  end_ip_address      = "0.0.0.0"
+}
+
+resource "azurerm_mysql_flexible_database" "MysqlDB" {
+  depends_on = [azurerm_mysql_flexible_server.MysqlServer]
+  name                = var.DBName
+  resource_group_name = var.RG
+  server_name         = azurerm_mysql_flexible_server.MysqlServer.name
+  charset             = "utf8"
+  collation           = "utf8_general_ci"
+}
+resource "azurerm_mysql_flexible_database" "MysqlDBTest" {
+  depends_on = [azurerm_mysql_flexible_server.MysqlServer]    
+  name                = var.DBNameTest
+  resource_group_name = var.RG
+  server_name         = azurerm_mysql_flexible_server.MysqlServer.name
+  charset             = "utf8"
+  collation           = "utf8_general_ci"
+}
+
 output "BlogURL" {
   value = azurerm_frontdoor.afd.cname
 }

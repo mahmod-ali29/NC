@@ -21,10 +21,6 @@
 - bash main.sh
 ```
 
-#To delete all posts once use the following file
-```diff
-serverless-script.sh
-```
 #To delete all posts once, run the serverless.sh script
 ```diff
 - bash serverless-script.sh

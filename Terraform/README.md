@@ -25,8 +25,7 @@
 ```diff
 serverless-script.sh
 ```
-#How to run the serverless script
+#To delete all posts once, run the serverless.sh script
 ```diff
-- cd .. // go back to NC folder
 - bash serverless-script.sh
 ```

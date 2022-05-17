@@ -193,7 +193,7 @@ az webapp config access-restriction add \
 
 #Blocking direct access to the App via ssh, allow only from the your External IP Address
  az webapp config access-restriction add \
-  -resource-group $RG \
+  --resource-group $RG \
   --name $webapp1 \
   --rule-name allow-frontdoor \
   --action Allow \

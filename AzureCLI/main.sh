@@ -1,6 +1,6 @@
 #!/bin/bash
 read -p "Insert the External Subnet to access the Linux Container (e.g.89.1.208.203):" ExternalIP
-read -p "Insert the Rresource Group Name (e.g.RG-ghostblog):" RG
+read -p "Insert the Resource Group Name (e.g.RG-ghostblog):" RG
 region1="eastus"
 region2="centralus"
 storageAccountName="storageghostblog$RANDOM"
@@ -14,10 +14,14 @@ az storage account create \
  --location $region1 \
  --sku Standard_RAGRS
 
-#create file share for ghost blog app
+#create file share for ghost blog app (prod & testing)
 az storage share create \
 --account-name $storageAccountName \
 --name ghost-fileshare 
+
+az storage share create \
+--account-name $storageAccountName \
+--name ghost-fileshare-testing
 
 AccessKey=$(az storage account keys list --account-name $storageAccountName --query [0].value --output tsv)
 
@@ -168,132 +172,18 @@ az webapp config set \
 	--generic-configurations '{"healthCheckPath":"/"}' \
 	--ftps-state FtpsOnly
 
-# Create MySQL DB Flexible Server
-az mysql flexible-server create \
-  --location $region1 \
-  --resource-group $RG \
-  --name mysqlghostblog$RANDOM \
-  --admin-user ghostuser \
-  --admin-password Test12345! \
-  --sku-name Standard_B1ms \
-  --tier Burstable \
-  --public-access 0.0.0.0 \
-  --storage-size 20 \
-  --storage-auto-grow Enabled \
-  --version 5.7 \
-  --high-availability ZoneRedundant \
-  --zone 1 \
-  --standby-zone 2
-
-#set the ENV parameter for the MySQL DB
-DBName="myghostdb"
-DBServerName=$(az mysql flexible-server list --query [*].name --output tsv)
-MYSQLSERVER=$(az mysql flexible-server list --query [*].fullyQualifiedDomainName --output tsv)
-MYSQLUSER=$(az mysql flexible-server list --query [*].administratorLogin --output tsv)
-MYSQLPASSWORD="Test12345!"
-
-#Disable secure transport
-az mysql flexible-server parameter set \
---resource-group $RG \
---server-name $DBServerName \
---name require_secure_transport \
---value OFF
-
-##Create MySQL DB
-az mysql flexible-server db create \
---resource-group $RG \
---server-name $DBServerName \
---database-name $DBName
-
-################################################
-#Set the App settings 
-az webapp config appsettings set \
-	--resource-group $RG \
-	--name $webapp1 \
-	--settings \
-      WEBSITE_HEALTHCHECK_MAXPINGFAILURES=2 \
-      database__client=mysql \
-      database__connection__database=$DBName \
-      database__connection__host=$MYSQLSERVER \
-      database__connection__user=$MYSQLUSER \
-      database__connection__password=$MYSQLPASSWORD
-
-az webapp config appsettings set \
-	--resource-group $RG \
-	--name $webapp2 \
-	--settings \
-      WEBSITE_HEALTHCHECK_MAXPINGFAILURES=2 \
-      database__client=mysql \
-      database__connection__database=$DBName \
-      database__connection__host=$MYSQLSERVER \
-      database__connection__user=$MYSQLUSER \
-      database__connection__password=$MYSQLPASSWORD
-
-az webapp config storage-account add \
-  --resource-group $RG \
-  --name $webapp1 \
-  --account-name $storageAccountName \
-  --custom-id volume \
-  --share-name "ghost-fileshare" \
-  --access-key $AccessKey \
-  --storage-type AzureFiles \
-  --mount-path /var/lib/ghost/content
-
-az webapp config storage-account add \
-  --resource-group $RG \
-  --name $webapp2 \
-  --account-name $storageAccountName \
-  --custom-id volume \
-  --share-name "ghost-fileshare" \
-  --access-key $AccessKey \
-  --storage-type AzureFiles \
-  --mount-path /var/lib/ghost/content  
-
-#start the Web App again
-az webapp start --name $webapp1 --resource-group $RG
-az webapp start --name $webapp2 --resource-group $RG
-
-#####Create Frontdoor using ARM template#######
-az deployment group create \
-	--resource-group $RG \
-	--template-file azuredeploy.json \
-  --parameters frontDoorName="ghostblogafd" backendAddress="$webapp1.azurewebsites.net" backendAddress2="$webapp2.azurewebsites.net"
-
-#Create WAF policy and associate it to the frontdoor
-az extension add --name front-door
-
-az network front-door waf-policy create \
---resource-group $RG \
---sku "Classic_AzureFrontDoor" \
---name "WAFpolicy" \
---mode "Prevention" \
---disabled false
-
-az network front-door waf-policy managed-rules add \
---policy-name "WAFpolicy" \
---resource-group $RG \
---type "Microsoft_DefaultRuleSet" \
---version "1.1"
-
-WAFpolicyID=$(az network front-door waf-policy show -g $RG -n WAFpolicy --query "[id]" --output tsv)
-
-az network front-door update \
---name ghostblogafd \
---resource-group $RG \
---set FrontendEndpoints[0].WebApplicationFirewallPolicyLink.id=$WAFpolicyID
-
 #Blocking direct access to the App via https, allow only from the frontdoor
 az webapp config access-restriction add \
-	--resource-group $RG \
-	--name $webapp1 \
+  --resource-group $RG \
+  --name $webapp1 \
   --rule-name allow-frontdoor \
   --action Allow \
   --service-tag AzureFrontDoor.Backend \
-	--priority 10
+  --priority 10
 
 az webapp config access-restriction add \
-	--resource-group $RG \
-	--name $webapp2 \
+  --resource-group $RG \
+  --name $webapp2 \
   --rule-name allow-frontdoor \
   --action Allow \
   --service-tag AzureFrontDoor.Backend \
@@ -301,8 +191,8 @@ az webapp config access-restriction add \
 
 #Blocking direct access to the App via ssh, allow only from the your External IP Address
  az webapp config access-restriction add \
-	--resource-group $RG \
-	--name $webapp1 \
+  -resource-group $RG \
+  --name $webapp1 \
   --rule-name allow-frontdoor \
   --action Allow \
   --scm-site true \
@@ -310,8 +200,8 @@ az webapp config access-restriction add \
   --priority 10
 
 az webapp config access-restriction add \
-	--resource-group $RG \
-	--name $webapp2 \
+  --resource-group $RG \
+  --name $webapp2 \
   --rule-name allow-frontdoor \
   --action Allow \
   --scm-site true \
@@ -348,6 +238,178 @@ az monitor app-insights component connect-webapp \
 --web-app $webapp2 \
 --enable-debugger false \
 --enable-profiler false
+
+# Create MySQL DB Flexible Server
+az mysql flexible-server create \
+  --location $region1 \
+  --resource-group $RG \
+  --name mysqlghostblog$RANDOM \
+  --admin-user ghostuser \
+  --admin-password Test12345! \
+  --sku-name Standard_B1ms \
+  --tier Burstable \
+  --public-access 0.0.0.0 \
+  --storage-size 20 \
+  --storage-auto-grow Enabled \
+  --version 5.7 \
+  --high-availability ZoneRedundant \
+  --zone 1 \
+  --standby-zone 2
+
+#set the ENV parameter for the MySQL DB
+DBName="myghostdb"
+DBNameTest="myghostdb-test"
+DBServerName=$(az mysql flexible-server list --query [*].name --output tsv)
+MYSQLSERVER=$(az mysql flexible-server list --query [*].fullyQualifiedDomainName --output tsv)
+MYSQLUSER=$(az mysql flexible-server list --query [*].administratorLogin --output tsv)
+MYSQLPASSWORD="Test12345!"
+
+#Disable secure transport
+az mysql flexible-server parameter set \
+--resource-group $RG \
+--server-name $DBServerName \
+--name require_secure_transport \
+--value OFF
+
+##Create MySQL DB
+az mysql flexible-server db create \
+--resource-group $RG \
+--server-name $DBServerName \
+--database-name $DBName
+
+##Create MySQL DB
+az mysql flexible-server db create \
+--resource-group $RG \
+--server-name $DBServerName \
+--database-name $DBNameTest
+
+#Set the App settings 
+az webapp config appsettings set \
+	--resource-group $RG \
+	--name $webapp1 \
+	--settings \
+      WEBSITE_HEALTHCHECK_MAXPINGFAILURES=2 \
+      database__client=mysql \
+      database__connection__database=$DBName \
+      database__connection__host=$MYSQLSERVER \
+      database__connection__user=$MYSQLUSER \
+      database__connection__password=$MYSQLPASSWORD
+
+az webapp config appsettings set \
+	--resource-group $RG \
+	--name $webapp2 \
+	--settings \
+      WEBSITE_HEALTHCHECK_MAXPINGFAILURES=2 \
+      database__client=mysql \
+      database__connection__database=$DBName \
+      database__connection__host=$MYSQLSERVER \
+      database__connection__user=$MYSQLUSER \
+      database__connection__password=$MYSQLPASSWORD
+
+#Create stagging deployment Slot for App1 in region1 & region2
+az webapp deployment slot create \
+	--name $webapp1 \
+	--resource-group $RG \
+	--slot testing \
+	--configuration-source $webapp1
+
+az webapp deployment slot create \
+	--name $webapp2 \
+	--resource-group $RG \
+	--slot testing \
+	--configuration-source $webapp2
+
+#Mounting Fileshare to the webApp1 (production)
+az webapp config storage-account add \
+  --resource-group $RG \
+  --name $webapp1 \
+  --account-name $storageAccountName \
+  --custom-id volume \
+  --share-name "ghost-fileshare" \
+  --access-key $AccessKey \
+  --storage-type AzureFiles \
+  --mount-path /var/lib/ghost/content
+
+az webapp config storage-account add \
+  --resource-group $RG \
+  --name $webapp2 \
+  --account-name $storageAccountName \
+  --custom-id volume \
+  --share-name "ghost-fileshare" \
+  --access-key $AccessKey \
+  --storage-type AzureFiles \
+  --mount-path /var/lib/ghost/content  
+
+#Mounting Fileshare to the webApp1 (testing)
+az webapp config storage-account add \
+  --resource-group $RG \
+  --name $webapp1 \
+  --account-name $storageAccountName \
+  --custom-id volume \
+  --share-name "ghost-fileshare-test" \
+  --access-key $AccessKey \
+  --storage-type AzureFiles \
+  --mount-path /var/lib/ghost/content \
+  --slot testing
+
+az webapp config storage-account add \
+  --resource-group $RG \
+  --name $webapp2 \
+  --account-name $storageAccountName \
+  --custom-id volume \
+  --share-name "ghost-fileshare-test" \
+  --access-key $AccessKey \
+  --storage-type AzureFiles \
+  --mount-path /var/lib/ghost/content \
+  --slot testing
+
+#Set the App settings for Testing slots
+az webapp config appsettings set \
+	--resource-group $RG \
+	--name $webapp1 \
+    --slot testing \
+	--settings \
+      database__connection__database=$DBNameTest 
+
+az webapp config appsettings set \
+	--resource-group $RG \
+	--name $webapp2 \
+    --slot testing \
+	--settings \
+      database__connection__database=$DBNameTest
+
+#start the Web App again
+az webapp start --name $webapp1 --resource-group $RG
+az webapp start --name $webapp2 --resource-group $RG
+
+#####Create Frontdoor using ARM template#######
+az deployment group create \
+	--resource-group $RG \
+	--template-file azuredeploy.json \
+    --parameters frontDoorName="ghostblogafd" backendAddress="$webapp1.azurewebsites.net" backendAddress2="$webapp2.azurewebsites.net"
+
+#Create WAF policy and associate it to the frontdoor
+az extension add --name front-door
+
+az network front-door waf-policy create \
+--resource-group $RG \
+--sku "Classic_AzureFrontDoor" \
+--name "WAFpolicy" \
+--mode "Prevention" \
+--disabled false
+
+az network front-door waf-policy managed-rules add \
+--policy-name "WAFpolicy" \
+--resource-group $RG \
+--type "Microsoft_DefaultRuleSet" \
+--version "1.1"
+
+WAFpolicyID=$(az network front-door waf-policy show -g $RG -n WAFpolicy --query "[id]" --output tsv)
+
+az network front-door update \
+--name ghostblogafd \
+--resource-group $RG \
+--set FrontendEndpoints[0].WebApplicationFirewallPolicyLink.id=$WAFpolicyID
 
 IDApp1=$(az webapp show --resource-group $RG --name $webapp1 --query [id] --output tsv)
 IDApp2=$(az webapp show --resource-group $RG --name $webapp2 --query [id] --output tsv)
@@ -487,18 +549,6 @@ az monitor diagnostic-settings create \
        }
      }
    ]'  
-#Create stagging deployment Slot for App1 in region1 & region2
-az webapp deployment slot create \
-	--name $webapp1 \
-	--resource-group $RG \
-	--slot testing \
-	--configuration-source $webapp1
-
-az webapp deployment slot create \
-	--name $webapp2 \
-	--resource-group $RG \
-	--slot testing \
-	--configuration-source $webapp2
 
 #Output
 URL=$(az network front-door frontend-endpoint show -g $RG --name "frontEndEndpoint" --front-door-name "ghostblogafd" --query "[hostName]"  --output tsv)

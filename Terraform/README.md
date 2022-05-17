@@ -21,7 +21,7 @@
 - bash main.sh
 ```
 
-#To delete all posts once, run the serverless.sh script
+#To delete all posts once, run the serverless script
 ```diff
 - bash serverless-script.sh
 ```

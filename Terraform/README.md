@@ -19,6 +19,8 @@
 - git clone https://github.com/mahmod-ali29/NC.git
 - cd NC/Terraform
 - bash main.sh
+
+#If any error occurs during the run. Then comment lines 8-18 of the main.sh file
 ```
 
 #To delete all posts once, run the serverless script

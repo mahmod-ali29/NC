@@ -1,11 +1,13 @@
 #!/bin/bash
-read -p "Insert the External Subnet to access the Linux Container (e.g.89.1.208.203):" ExternalIP
 read -p "Insert the Resource Group Name (e.g.RG-ghostblog):" RG
 region1="eastus"
 region2="centralus"
 storageAccountName="storageghostblog$RANDOM"
 webapp1="appghostblog$RANDOM-${region1}"
 webapp2="appghostblog$RANDOM-${region2}"
+
+#Get  your External IP address
+ExternalIP=$(curl -s ipinfo.io/ip)
 
 #create storage account
 az storage account create \
